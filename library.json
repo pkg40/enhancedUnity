@@ -17,8 +17,5 @@
   ],
   "frameworks": ["arduino"],
   "platforms": ["espressif32", "espressif8266", "atmelavr", "atmelsam"],
-  "headers": ["enhancedUnity/enhanced_unity.hpp"],
-  "build": {
-    "srcFilter": ["+<src/>"]
-  }
+  "headers": ["enhanced_unity.hpp"]
 }

@@ -12,7 +12,7 @@ Features:
 Quick start (PlatformIO):
 1. Add this library to lib/ or as a dependency.
 2. Include header in tests:
-   #include <enhancedUnity/enhanced_unity.hpp>
+   #include <enhanced_unity.hpp>
 3. Use macros in your tests:
    ENHANCED_UNITY_START_TEST_METHOD("my_test", __FILE__, __LINE__);
    TEST_ASSERT_EQUAL_UINT32_DEBUG(42, value);

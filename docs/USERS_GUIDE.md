@@ -10,7 +10,7 @@ Installation
 
 Usage
 - Include header in test files:
-  - #include <enhancedUnity/enhanced_unity.hpp>
+  - #include <enhanced_unity.hpp>
 - Wrap each test method:
   - ENHANCED_UNITY_START_TEST_METHOD("name", __FILE__, __LINE__);
   - ... assertions ...
