@@ -2,6 +2,9 @@
 
 #ifdef ARDUINO
 #include <Arduino.h>
+#else
+// Use shared native Arduino compatibility from config library
+#include "../../config/src/compat/native_arduino_compat.hpp"
 #endif
 #include <unity.h>
 #include <cstdio>

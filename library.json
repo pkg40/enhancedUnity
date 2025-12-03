@@ -15,7 +15,7 @@
       "maintainer": true
     }
   ],
-  "frameworks": ["arduino"],
-  "platforms": ["espressif32", "espressif8266", "atmelavr", "atmelsam"],
+  "frameworks": "*",
+  "platforms": ["espressif32", "espressif8266", "atmelavr", "atmelsam", "native"],
   "headers": ["enhanced_unity.hpp"]
 }
