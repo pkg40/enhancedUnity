@@ -669,4 +669,190 @@ extern int _enhancedUnityFailureCount;
 
 #endif
 
+// ============================================================================
+// NATIVE EXCEPTION HANDLING SUPPORT (CONFIGMGR_NATIVE)
+// ============================================================================
+// When CONFIGMGR_NATIVE is defined, adds exception-safe test execution
+// for native platform testing. This extends the base macros with exception
+// handling capabilities.
+// ============================================================================
+
+#ifdef CONFIGMGR_NATIVE
+
+#include <exception>
+
+namespace enhanced_unity_host {
+
+struct TestAbortSignal final : public std::exception {
+    const char* what() const noexcept override { return "EnhancedUnityTestAbort"; }
+};
+
+inline thread_local const char* currentMethodName = nullptr;
+inline thread_local const char* currentFileName = nullptr;
+inline thread_local int currentLineNumber = 0;
+inline thread_local bool methodFinalized = true;
+inline thread_local bool failureRecorded = false;
+
+inline void beginMethod(const char* methodName, const char* fileName, int lineNumber) {
+    currentMethodName = methodName;
+    currentFileName = fileName;
+    currentLineNumber = lineNumber;
+    methodFinalized = false;
+    failureRecorded = false;
+}
+
+inline void markFailureRecorded() {
+    failureRecorded = true;
+}
+
+inline void finalizeMethod() {
+    methodFinalized = true;
+}
+
+inline void recordAbortedMethod(const char* reason, bool force = false) {
+    if (currentMethodName == nullptr && !force) {
+        return;
+    }
+
+    if (methodFinalized && !force) {
+        return;
+    }
+
+    if (!failureRecorded) {
+        failureRecorded = true;
+        _enhancedUnityMethodFailureCount++;
+        _enhancedUnityMethodTotalFailureCount++;
+        _enhancedUnityMethodFileFailureCount++;
+        _enhancedUnityFailureCount++;
+    }
+
+    if (!methodFinalized) {
+        _enhancedUnityAssertionFileCount += _enhancedUnityAssertionCount;
+        _enhancedUnityAssertionFileFailureCount += _enhancedUnityAssertionFailureCount;
+    }
+
+    methodFinalized = true;
+
+    if (ENHANCED_UNITY_VERBOSITY <= VERBOSITY_TEST_METHODS) {
+        printf("[ABORTED]     - %s (%s:%d) : %s\n",
+               currentMethodName ? currentMethodName : "<unknown>",
+               currentFileName ? currentFileName : "<unknown>",
+               currentLineNumber,
+               reason ? reason : "unexpected failure");
+    }
+}
+
+inline void handleUnexpectedException(const char* testName, const std::exception& ex) {
+    recordAbortedMethod(ex.what(), true);
+    printf("    [EXCEPTION] test %s threw std::exception: %s\n", testName, ex.what());
+}
+
+inline void handleUnknownException(const char* testName) {
+    recordAbortedMethod("unknown exception", true);
+    printf("    [EXCEPTION] test %s threw unknown exception\n", testName);
+}
+
+inline void handleSetUpFailure(const char* testName, const char* message) {
+    printf("    [EXCEPTION] setUp for %s failed: %s\n", testName, message);
+    Unity.CurrentTestFailed = 1;
+    _enhancedUnityFailureCount++;
+}
+
+inline void handleTearDownException(const char* testName, const std::exception& ex) {
+    recordAbortedMethod("tearDown threw exception", true);
+    printf("    [EXCEPTION] tearDown for %s threw std::exception: %s\n", testName, ex.what());
+}
+
+inline void handleUnknownTearDownException(const char* testName) {
+    recordAbortedMethod("tearDown threw unknown exception", true);
+    printf("    [EXCEPTION] tearDown for %s threw unknown exception\n", testName);
+}
+
+inline void runTest(const char* testName, void (*function)()) {
+    if (ENHANCED_UNITY_VERBOSITY <= VERBOSITY_TEST_METHODS) {
+        printf("[RUN] %s\n", testName);
+    }
+    bool setupComplete = false;
+    try {
+        setUp();
+        setupComplete = true;
+    } catch (const std::exception& ex) {
+        handleSetUpFailure(testName, ex.what());
+        return;
+    } catch (...) {
+        handleSetUpFailure(testName, "unknown exception");
+        return;
+    }
+
+    try {
+        function();
+        if (!methodFinalized) {
+            recordAbortedMethod("test exited without ENHANCED_UNITY_END_TEST_METHOD()", true);
+        }
+    } catch (const TestAbortSignal&) {
+        // Expected path when ENHANCED_UNITY_END_TEST_METHOD detects failures
+    } catch (const std::exception& ex) {
+        handleUnexpectedException(testName, ex);
+    } catch (...) {
+        handleUnknownException(testName);
+    }
+
+    if (setupComplete) {
+        try {
+            tearDown();
+        } catch (const std::exception& ex) {
+            handleTearDownException(testName, ex);
+        } catch (...) {
+            handleUnknownTearDownException(testName);
+        }
+    }
+}
+
+} // namespace enhanced_unity_host
+
+// Redefine macros for native exception handling
+#undef ENHANCED_UNITY_START_TEST_METHOD
+#define ENHANCED_UNITY_START_TEST_METHOD(methodName, fileName, lineNumber) \
+    do { \
+        ::enhanced_unity_host::beginMethod((methodName), (fileName), (lineNumber)); \
+        if (ENHANCED_UNITY_VERBOSITY <= VERBOSITY_TEST_METHODS) { \
+            printf("===== %s \n", (methodName)); \
+        } \
+        _enhancedUnityMethodCount++; \
+        _enhancedUnityMethodTotalCount++; \
+        _enhancedUnityMethodFileCount++; \
+        _enhancedUnityAssertionCount = 0; \
+        _enhancedUnityAssertionFailureCount = 0; \
+    } while(0)
+
+#undef ENHANCED_UNITY_END_TEST_METHOD
+#define ENHANCED_UNITY_END_TEST_METHOD() \
+    do { \
+        if (_enhancedUnityAssertionFailureCount > 0) { \
+            _enhancedUnityMethodFailureCount++; \
+            _enhancedUnityMethodTotalFailureCount++; \
+            _enhancedUnityMethodFileFailureCount++; \
+            ::enhanced_unity_host::markFailureRecorded(); \
+        } \
+        _enhancedUnityAssertionFileCount += _enhancedUnityAssertionCount; \
+        _enhancedUnityAssertionFileFailureCount += _enhancedUnityAssertionFailureCount; \
+        if (ENHANCED_UNITY_VERBOSITY <= VERBOSITY_TEST_METHODS) { \
+            printf("[%s]     - assertions [tot %5d | pass %5d | fail %5d]\n", \
+                   _enhancedUnityAssertionFailureCount == 0 ? "PASSED" : "FAILED", \
+                   _enhancedUnityAssertionCount, \
+                   _enhancedUnityAssertionCount - _enhancedUnityAssertionFailureCount, \
+                   _enhancedUnityAssertionFailureCount \
+                ); \
+        } \
+        ::enhanced_unity_host::finalizeMethod(); \
+        if (_enhancedUnityAssertionFailureCount > 0) { \
+            throw ::enhanced_unity_host::TestAbortSignal(); \
+        } \
+    } while(0)
+
+#undef RUN_TEST_DEBUG
+#define RUN_TEST_DEBUG(testFunction) ::enhanced_unity_host::runTest(#testFunction, (testFunction))
+
+#endif // CONFIGMGR_NATIVE
+
 
